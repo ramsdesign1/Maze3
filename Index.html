@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Kids Maze Generator</title>
+<style>
+  body { font-family: Arial, sans-serif; background:#f7f9fc; margin:0; padding:20px; color:#222; }
+  h1 { margin:0 0 10px; font-size:22px; }
+  .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  select, button, label { font-size:14px; padding:8px 10px; }
+  #canvasWrap { background:#fff; border:1px solid #ccc; border-radius:8px; padding:10px; display:inline-block; }
+  #maze { display:block; background:#ffffff; }
+  .note { font-size:12px; color:#666; margin-top:8px; }
+  .legend { font-size:12px; color:#333; margin-top:8px; }
+  .legend span { display:inline-block; margin-right:12px; }
+  .swatch { width:12px; height:12px; display:inline-block; border:1px solid #999; vertical-align:middle; margin-right:4px; }
+</style>
+</head>
+<body>
+  <h1>Maze Generator for Kids</h1>
+  <div class="toolbar">
+    <label for="difficulty">Difficulty:</label>
+    <select id="difficulty">
+      <option value="easy">Easy (15×15)</option>
+      <option value="medium">Medium (25×25)</option>
+      <option value="hard">Hard (35×35)</option>
+    </select>
+    <button id="generateBtn">Generate Maze</button>
+    <label><input type="checkbox" id="showSolution"> Show Solution</label>
+  </div>
+
+  <div id="canvasWrap">
+    <canvas id="maze" width="700" height="700"></canvas>
+  </div>
+
+  <div class="legend">
+    <span><span class="swatch" style="background:#86c5ff;"></span>Start</span>
+    <span><span class="swatch" style="background:#ffb3ba;"></span>Finish</span>
+    <span><span class="swatch" style="background:#7bd389;"></span>Solution Path</span>
+  </div>
+
+  <p class="note">Tip: Change difficulty, click Generate, then toggle Show Solution.</p>
+
+<script>
+(function(){
+  // Configuration
+  const sizes = {
+    easy: 15,
+    medium: 25,
+    hard: 35
+  };
+
+  const canvas = document.getElementById('maze');
+  const ctx = canvas.getContext('2d');
+  const difficultyEl = document.getElementById('difficulty');
+  const generateBtn = document.getElementById('generateBtn');
+  const showSolutionEl = document.getElementById('showSolution');
+
+  let rows = sizes.easy;
+  let cols = sizes.easy;
+  let grid = [];        // cells with walls
+  let cellSize;         // pixel size per cell
+  let solutionPath = []; // list of coordinates from start to end
+
+  // Cell structure
+  function Cell(r, c) {
+    this.r = r;
+    this.c = c;
+    this.visited = false;
+    // Walls: top, right, bottom, left
+    this.walls = [true, true, true, true];
+  }
+
+  // Utilities
+  function index(r, c) {
+    if (r < 0 || c < 0 || r >= rows || c >= cols) return -1;
+    return r * cols + c;
+  }
+
+  function neighborsUnvisited(r, c) {
+    const nbrs = [];
+    const options = [
+      {dr:-1, dc:0, wall:0, opp:2}, // top
+      {dr:0, dc:1, wall:1, opp:3},  // right
+      {dr:1, dc:0, wall:2, opp:0},  // bottom
+      {dr:0, dc:-1, wall:3, opp:1}  // left
+    ];
+    for (const o of options) {
+      const rr = r + o.dr, cc = c + o.dc;
+      const idx = index(rr, cc);
+      if (idx !== -1 && !grid[idx].visited) {
+        nbrs.push({cell:grid[idx], dir:o});
+      }
+    }
+    return nbrs;
+  }
+
+  // Generate maze using recursive backtracking (DFS)
+  function generateMaze() {
+    grid = [];
+    for (let r=0; r<rows; r++) {
+      for (let c=0; c<cols; c++) {
+        grid.push(new Cell(r,c));
+      }
+    }
+    const stack = [];
+    const start = grid[0]; // top-left
+    start.visited = true;
+    stack.push(start);
+
+    while (stack.length) {
+      const current = stack[stack.length - 1];
+      const nbrs = neighborsUnvisited(current.r, current.c);
+      if (nbrs.length > 0) {
+        const pick = nbrs[Math.floor(Math.random()*nbrs.length)];
+        // remove walls between current and neighbor
+        current.walls[pick.dir.wall] = false;
+        pick.cell.walls[pick.dir.opp] = false;
+        pick.cell.visited = true;
+        stack.push(pick.cell);
+      } else {
+        stack.pop();
+      }
+    }
+  }
+
+  // Solve maze using BFS from start(0,0) to end(rows-1, cols-1)
+  function solveMaze() {
+    solutionPath = [];
+    const start = {r:0, c:0};
+    const goal = {r:rows-1, c:cols-1};
+
+    const q = [];
+    const visited = new Set();
+    const parent = new Map();
+
+    function key(r,c){ return r + ',' + c; }
+
+    q.push(start);
+    visited.add(key(start.r, start.c));
+
+    const moves = [
+      {dr:-1, dc:0, wallIdx:0, oppIdx:2}, // up
+      {dr:0, dc:1, wallIdx:1, oppIdx:3},  // right
+      {dr:1, dc:0, wallIdx:2, oppIdx:0},  // down
+      {dr:0, dc:-1, wallIdx:3, oppIdx:1}  // left
+    ];
+
+    while (q.length) {
+      const {r, c} = q.shift();
+      if (r === goal.r && c === goal.c) break;
+
+      const curr = grid[index(r,c)];
+      for (const m of moves) {
+        const rr = r + m.dr, cc = c + m.dc;
+        const ni = index(rr,cc);
+        if (ni === -1) continue;
+
+        // Check if there is no wall between current and neighbor
+        if (!curr.walls[m.wallIdx]) {
+          if (!visited.has(key(rr,cc))) {
+            visited.add(key(rr,cc));
+            parent.set(key(rr,cc), key(r,c));
+            q.push({r:rr, c:cc});
+          }
+        }
+      }
+    }
+
+    // Reconstruct path
+    let cur = key(rows-1, cols-1);
+    if (!parent.has(cur) && !(rows===1 && cols===1)) {
+      solutionPath = []; // no path (should not happen in perfect maze)
+      return;
+    }
+
+    const path = [];
+    path.push({r:rows-1, c:cols-1});
+    while (cur !== key(0,0)) {
+      cur = parent.get(cur);
+      const [pr, pc] = cur.split(',').map(Number);
+      path.push({r:pr, c:pc});
+    }
+    path.reverse();
+    solutionPath = path;
+  }
+
+  // Drawing
+  function drawMaze() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    // compute cell size to fit canvas
+    const padding = 10;
+    const usable = Math.min(canvas.width, canvas.height) - padding*2;
+    cellSize = usable / Math.max(rows, cols);
+    const offsetX = (canvas.width - cellSize*cols)/2;
+    const offsetY = (canvas.height - cellSize*rows)/2;
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#222';
+
+    // Draw cells walls
+    for (let r=0; r<rows; r++) {
+      for (let c=0; c<cols; c++) {
+        const cell = grid[index(r,c)];
+        const x = offsetX + c*cellSize;
+        const y = offsetY + r*cellSize;
+
+        // top wall
+        if (cell.walls[0]) {
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + cellSize, y);
+          ctx.stroke();
+        }
+        // right wall
+        if (cell.walls[1]) {
+          ctx.beginPath();
+          ctx.moveTo(x + cellSize, y);
+          ctx.lineTo(x + cellSize, y + cellSize);
+          ctx.stroke();
+        }
+        // bottom wall
+        if (cell.walls[2]) {
+          ctx.beginPath();
+          ctx.moveTo(x, y + cellSize);
+          ctx.lineTo(x + cellSize, y + cellSize);
+          ctx.stroke();
+        }
+        // left wall
+        if (cell.walls[3]) {
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x, y + cellSize);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Fill start and end
+    const startX = offsetX, startY = offsetY;
+    const endX = offsetX + (cols-1)*cellSize, endY = offsetY + (rows-1)*cellSize;
+
+    ctx.fillStyle = '#86c5ff';
+    ctx.fillRect(startX+3, startY+3, cellSize-6, cellSize-6);
+
+    ctx.fillStyle = '#ffb3ba';
+    ctx.fillRect(endX+3, endY+3, cellSize-6, cellSize-6);
+
+    // Draw solution if enabled
+    if (showSolutionEl.checked && solutionPath.length) {
+      ctx.strokeStyle = '#7bd389';
+      ctx.lineWidth = Math.max(3, Math.floor(cellSize/6));
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (let i=0; i<solutionPath.length; i++) {
+        const p = solutionPath[i];
+        const x = offsetX + p.c*cellSize + cellSize/2;
+        const y = offsetY + p.r*cellSize + cellSize/2;
+        if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function regenerate() {
+    const val = difficultyEl.value;
+    rows = cols = sizes[val];
+    generateMaze();
+    solveMaze();
+    drawMaze();
+  }
+
+  // Events
+  generateBtn.addEventListener('click', regenerate);
+  showSolutionEl.addEventListener('change', drawMaze);
+
+  // First run
+  regenerate();
+})();k 
+</script>
+</body>
+</html>
+
